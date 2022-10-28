@@ -1,19 +1,49 @@
-const socketController = (socket) => {
-    console.log("Connected Client", socket.id);
+import TicketControl from "../models/ticket-control.js";
 
-    socket.on("disconnect", () => {
-        console.log("Disconnected Client");
+const ticketControl = new TicketControl();
+
+const socketController = (socket, io) => {
+    socket.emit("last-ticket", { lastTicket: ticketControl.last });
+    socket.emit("current-status", { lastFour: ticketControl.lastFour });
+    io.emit("pending-tickets", { pending: ticketControl.tickets.length });
+
+    socket.on("next-ticket", (payload, callback) => {
+        const next = ticketControl.next();
+
+        callback(next);
+
+        // Notify a new ticket
+        io.emit("pending-tickets", { pending: ticketControl.tickets.length });
     });
 
-    socket.on("send-message", (payload, callback) => {
-        console.log(payload);
+    socket.on("attend-ticket", ({ desktop }, callback) => {
+        if (!desktop) {
+            return callback({
+                ok: false,
+                msg: "The desktop is required",
+            });
+        }
 
-        callback("ZYX-321");
+        const ticket = ticketControl.takeTicket(desktop);
 
-        payload.date = new Date().toLocaleString();
-        payload.from = "Server";
+        // TODO: Notify last four
+        socket.broadcast.emit("current-status", {
+            lastFour: ticketControl.lastFour,
+        });
 
-        socket.broadcast.emit("send-message", payload);
+        io.emit("pending-tickets", { pending: ticketControl.tickets.length });
+
+        if (!ticket) {
+            callback({
+                ok: false,
+                msg: "There's no more tickets",
+            });
+        } else {
+            callback({
+                ok: true,
+                ticket,
+            });
+        }
     });
 };
 
